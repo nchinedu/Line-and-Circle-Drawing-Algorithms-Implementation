@@ -211,23 +211,70 @@ class LineAnalyzer:
             (0, 0, 100, 100, "Slope = 1")
         ]
 
+        # Left panel for buttons and results
+        self.left_panel = ttk.Frame(self.root)
+        self.left_panel.grid(row=0, column=0, sticky='nsew')
+
         # Create buttons for each test case
         for i, (x1, y1, x2, y2, desc) in enumerate(self.test_cases):
             ttk.Button(
-                self.root,
+                self.left_panel,
                 text=f"Test {desc}",
                 command=lambda x1=x1, y1=y1, x2=x2, y2=y2: self.run_analysis(
                     x1, y1, x2, y2)
             ).grid(row=i, column=0, pady=5)
 
         # Results display
-        self.results_text = tk.Text(self.root, height=20, width=60)
+        self.results_text = tk.Text(self.left_panel, height=20, width=60)
         self.results_text.grid(row=0, column=1, rowspan=len(self.test_cases))
 
-        # Plot area
+        # Create main frame with scrollbars for the chart area
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.grid(row=0, column=2, sticky='nsew')
+
+        # Setup scrollbars for the chart area
+        self.scroll_canvas = tk.Canvas(self.main_frame)
+        self.vsb = ttk.Scrollbar(
+            self.main_frame, orient="vertical", command=self.scroll_canvas.yview)
+        self.hsb = ttk.Scrollbar(
+            self.main_frame, orient="horizontal", command=self.scroll_canvas.xview)
+        self.scroll_canvas.configure(
+            yscrollcommand=self.vsb.set, xscrollcommand=self.hsb.set)
+
+        # Grid scrollbars and canvas
+        self.vsb.grid(row=0, column=1, sticky='ns')
+        self.hsb.grid(row=1, column=0, sticky='ew')
+        self.scroll_canvas.grid(row=0, column=0, sticky='nsew')
+
+        # Create frame inside canvas for the matplotlib figure
+        self.chart_frame = ttk.Frame(self.scroll_canvas)
+        self.canvas_frame = self.scroll_canvas.create_window(
+            (0, 0), window=self.chart_frame, anchor='nw')
+
+        # Plot setup
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
-        self.canvas.get_tk_widget().grid(row=0, column=2, rowspan=len(self.test_cases))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.chart_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Configure grid weights
+        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(2, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
+
+        # Bind events for scrolling
+        self.chart_frame.bind('<Configure>', self.on_frame_configure)
+        self.scroll_canvas.bind('<Configure>', self.on_canvas_configure)
+
+    def on_frame_configure(self, event=None):
+        """Reset the scroll region to encompass the inner frame"""
+        self.scroll_canvas.configure(
+            scrollregion=self.scroll_canvas.bbox("all"))
+
+    def on_canvas_configure(self, event):
+        """Update the inner frame's width to fill the canvas"""
+        canvas_width = event.width
+        self.scroll_canvas.itemconfig(self.canvas_frame, width=canvas_width)
 
     def run_analysis(self, x1, y1, x2, y2):
         self.results_text.delete(1.0, tk.END)
