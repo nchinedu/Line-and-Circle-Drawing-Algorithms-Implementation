@@ -1,3 +1,5 @@
+import csv
+from tkinter import filedialog, messagebox
 import tkinter as tk
 from tkinter import ttk, messagebox
 import matplotlib.pyplot as plt
@@ -72,23 +74,35 @@ def midpoint_line(x1, y1, x2, y2):
     step_y = 1 if y2 > y1 else -1
 
     if dx > dy:
-        d = dy - dx/2
-        for _ in range(dx + 1):
-            points.append((x, y))
-            if d > 0:
-                y += step_y
-                d -= dx
-            x += step_x
-            d += dy
-    else:
-        d = dx - dy/2
-        for _ in range(dy + 1):
-            points.append((x, y))
-            if d > 0:
+        d = 2 * dy - dx
+        incrE = 2 * dy
+        incrNE = 2 * (dy - dx)
+        points.append((x, y))
+
+        for _ in range(dx):
+            if d <= 0:
+                d += incrE
                 x += step_x
-                d -= dy
-            y += step_y
-            d += dx
+            else:
+                d += incrNE
+                x += step_x
+                y += step_y
+            points.append((x, y))
+    else:
+        d = 2 * dx - dy
+        incrN = 2 * dx
+        incrNE = 2 * (dx - dy)
+        points.append((x, y))
+
+        for _ in range(dy):
+            if d <= 0:
+                d += incrN
+                y += step_y
+            else:
+                d += incrNE
+                x += step_x
+                y += step_y
+            points.append((x, y))
 
     return points
 
@@ -356,7 +370,42 @@ class LineDrawerGUI:
 
         # Results text area
         self.results_text = tk.Text(self.control_frame, height=10, width=40)
-        self.results_text.grid(row=7, column=0, columnspan=2)
+        self.results_text.grid(row=6, column=0, columnspan=2, pady=(0, 10))
+
+        # Create table controls frame
+        self.table_controls = ttk.Frame(self.control_frame)
+        self.table_controls.grid(row=7, column=0, columnspan=2, pady=(0, 5))
+
+        # Add export button
+        self.export_btn = ttk.Button(
+            self.table_controls, text="Export Points", command=self.export_points)
+        self.export_btn.pack(side='right', padx=5)
+
+        # Add a table frame below the controls
+        self.table_frame = ttk.Frame(self.control_frame)
+        self.table_frame.grid(row=8, column=0, columnspan=2, pady=5)
+
+        # Create treeview for points
+        self.points_table = ttk.Treeview(self.table_frame,
+                                         columns=('Step', 'X', 'Y'),
+                                         show='headings',
+                                         height=10)  # Limit visible rows
+
+        # Setup column headings with sorting
+        self.setup_table_sorting()
+
+        # Add scrollbars for table
+        self.table_y_scroll = ttk.Scrollbar(
+            self.table_frame, orient="vertical", command=self.points_table.yview)
+        self.table_x_scroll = ttk.Scrollbar(
+            self.table_frame, orient="horizontal", command=self.points_table.xview)
+        self.points_table.configure(
+            yscrollcommand=self.table_y_scroll.set, xscrollcommand=self.table_x_scroll.set)
+
+        # Grid table and scrollbars
+        self.points_table.grid(row=0, column=0, sticky='nsew')
+        self.table_y_scroll.grid(row=0, column=1, sticky='ns')
+        self.table_x_scroll.grid(row=1, column=0, sticky='ew')
 
         # Create main frame with scrollbars for the chart area
         self.main_frame = ttk.Frame(root)
@@ -411,6 +460,66 @@ class LineDrawerGUI:
         canvas_width = event.width
         self.scroll_canvas.itemconfig(self.canvas_frame, width=canvas_width)
 
+    def setup_table_sorting(self):
+        """Setup sortable columns in the table"""
+        column_configs = {
+            'Step': {'width': 70, 'anchor': 'center'},
+            'X': {'width': 100, 'anchor': 'center'},
+            'Y': {'width': 100, 'anchor': 'center'}
+        }
+
+        for col in self.points_table['columns']:
+            self.points_table.heading(col, text=col,
+                                      command=lambda c=col: self.sort_table_by_column(c))
+            self.points_table.column(col, **column_configs[col])
+
+    def sort_table_by_column(self, col):
+        """Sort table content when header is clicked"""
+        items = [(self.points_table.set(k, col), k)
+                 for k in self.points_table.get_children('')]
+
+        # Convert values to proper type for sorting
+        if col == 'Step':
+            items.sort(key=lambda x: int(x[0]))
+        else:
+            items.sort(key=lambda x: float(x[0]))
+
+        # Rearrange items in sorted positions
+        for index, (_, k) in enumerate(items):
+            self.points_table.move(k, '', index)
+
+    def export_points(self):
+        """Export points to CSV file"""
+        points = []
+        columns = self.points_table['columns']
+
+        # Get all points from table
+        for item in self.points_table.get_children():
+            points.append(self.points_table.item(item)['values'])
+
+        if not points:
+            messagebox.showwarning("Export Warning", "No points to export!")
+            return
+
+        # Ask for save location
+        filename = filedialog.asksaveasfilename(
+            defaultextension='.csv',
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Export Points Data"
+        )
+
+        if filename:
+            try:
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(columns)
+                    writer.writerows(points)
+                messagebox.showinfo("Export Successful",
+                                    f"Points data has been exported to:\n{filename}")
+            except Exception as e:
+                messagebox.showerror("Export Error",
+                                     f"An error occurred while exporting:\n{str(e)}")
+
     def draw_line(self):
         try:
             x1 = int(self.x1.get())
@@ -457,6 +566,15 @@ class LineDrawerGUI:
                                          f"Points generated: {len(points)}\n"
                                          f"Execution time: {execution_time:.4f} ms\n\n"
                                          )
+
+                # Clear previous table entries
+                for item in self.points_table.get_children():
+                    self.points_table.delete(item)
+
+                # Add points to table
+                for i, (x, y) in enumerate(points):
+                    self.points_table.insert(
+                        '', 'end', values=(f"{i+1}", f"{x}", f"{y}"))
 
             self.fig.tight_layout()
             self.canvas.draw()
@@ -505,6 +623,41 @@ class CircleDrawerGUI:
         # Results text area
         self.results_text = tk.Text(self.control_frame, height=10, width=40)
         self.results_text.grid(row=6, column=0, columnspan=2)
+
+        # Add a table frame below the results text
+        self.table_frame = ttk.Frame(self.control_frame)
+        self.table_frame.grid(row=8, column=0, columnspan=2, pady=10)
+
+        # Create table controls frame
+        self.table_controls = ttk.Frame(self.control_frame)
+        self.table_controls.grid(row=7, column=0, columnspan=2, pady=5)
+
+        # Add export button
+        self.export_btn = ttk.Button(
+            self.table_controls, text="Export Points", command=self.export_points)
+        self.export_btn.pack(side='right', padx=5)
+
+        # Create treeview for points
+        self.points_table = ttk.Treeview(self.table_frame,
+                                         columns=('Step', 'X', 'Y', 'Octant'),
+                                         show='headings',
+                                         height=10)  # Limit visible rows
+
+        # Setup column headings with sorting
+        self.setup_table_sorting()
+
+        # Add scrollbars for table
+        self.table_y_scroll = ttk.Scrollbar(
+            self.table_frame, orient="vertical", command=self.points_table.yview)
+        self.table_x_scroll = ttk.Scrollbar(
+            self.table_frame, orient="horizontal", command=self.points_table.xview)
+        self.points_table.configure(
+            yscrollcommand=self.table_y_scroll.set, xscrollcommand=self.table_x_scroll.set)
+
+        # Grid table and scrollbars
+        self.points_table.grid(row=0, column=0, sticky='nsew')
+        self.table_y_scroll.grid(row=0, column=1, sticky='ns')
+        self.table_x_scroll.grid(row=1, column=0, sticky='ew')
 
         # Create main frame with scrollbars for the chart area
         self.main_frame = ttk.Frame(root)
@@ -557,6 +710,79 @@ class CircleDrawerGUI:
         """Update the inner frame's width to fill the canvas"""
         canvas_width = event.width
         self.scroll_canvas.itemconfig(self.canvas_frame, width=canvas_width)
+
+    def setup_table_sorting(self):
+        """Setup sortable columns in the table"""
+        column_configs = {
+            'Step': {'width': 70, 'anchor': 'center'},
+            'X': {'width': 100, 'anchor': 'center'},
+            'Y': {'width': 100, 'anchor': 'center'},
+            'Octant': {'width': 70, 'anchor': 'center'}
+        }
+
+        for col in self.points_table['columns']:
+            self.points_table.heading(col, text=col,
+                                      command=lambda c=col: self.sort_table_by_column(c))
+            self.points_table.column(col, **column_configs[col])
+
+    def sort_table_by_column(self, col):
+        """Sort table content when header is clicked"""
+        items = [(self.points_table.set(k, col), k)
+                 for k in self.points_table.get_children('')]
+
+        # Convert values to proper type for sorting
+        if col in ['Step', 'Octant']:
+            items.sort(key=lambda x: int(x[0]))
+        else:
+            items.sort(key=lambda x: float(x[0]))
+
+        for index, (_, k) in enumerate(items):
+            self.points_table.move(k, '', index)
+
+    def export_points(self):
+        """Export points to CSV file"""
+        points = []
+        columns = self.points_table['columns']
+
+        # Get all points from table
+        for item in self.points_table.get_children():
+            points.append(self.points_table.item(item)['values'])
+
+        if not points:
+            messagebox.showwarning("Export Warning", "No points to export!")
+            return
+
+        # Ask for save location
+        filename = filedialog.asksaveasfilename(
+            defaultextension='.csv',
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Export Points Data"
+        )
+
+        if filename:
+            try:
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(columns)
+                    writer.writerows(points)
+                messagebox.showinfo("Export Successful",
+                                    f"Points data has been exported to:\n{filename}")
+            except Exception as e:
+                messagebox.showerror("Export Error",
+                                     f"An error occurred while exporting:\n{str(e)}")
+
+    def get_octant(self, x, y, xc, yc):
+        """Determine which octant a point belongs to"""
+        dx = x - xc
+        dy = y - yc
+        if dx >= 0 and dy >= 0:
+            return 1 if dx >= dy else 2
+        elif dx < 0 and dy >= 0:
+            return 3 if -dx <= dy else 4
+        elif dx < 0 and dy < 0:
+            return 5 if -dx >= -dy else 6
+        else:  # dx >= 0 and dy < 0
+            return 7 if dx >= -dy else 8
 
     def draw_circle(self):
         try:
@@ -617,6 +843,16 @@ class CircleDrawerGUI:
                                          f"Average error: {avg_error:.4f} pixels\n"
                                          f"Maximum error: {max_error:.4f} pixels\n\n"
                                          )
+
+                # Clear previous table entries
+                for item in self.points_table.get_children():
+                    self.points_table.delete(item)
+
+                # Add points to table
+                for i, (x, y) in enumerate(points):
+                    octant = self.get_octant(x, y, xc, yc)
+                    self.points_table.insert('', 'end',
+                                             values=(f"{i+1}", f"{x}", f"{y}", f"{octant}"))
 
             self.fig.tight_layout()
             self.canvas.draw()
