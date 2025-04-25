@@ -25,5 +25,6 @@ This Python application implements and visualizes various line and circle drawin
 
 ## Usage
 Run the main script:
-bash
+``` bash
 python Bresenham-Mid-point-Circle.py
+```
